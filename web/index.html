@@ -21,22 +21,29 @@
 <nav class="tabs">
   <button type="button" id="tab-lookup" class="on">Look up a hand</button>
   <button type="button" id="tab-browse">Browse</button>
-  <button type="button" id="tab-tend">Six-max tendencies</button>
+  <button type="button" id="tab-tend">Insights</button>
 </nav>
 
 <section id="lookup">
   <div class="layout">
     <form id="entry" class="panel">
       <label class="field">
-        <span>Six cards</span>
-        <input id="text" autocomplete="off" spellcheck="false" placeholder="AsAhKdQd7c6c" maxlength="40">
+        <span>Type six cards</span>
+        <input id="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="As Ah Kd Qd 7c 6c" aria-describedby="entry-note" maxlength="40">
       </label>
-      <div id="grid" class="grid" aria-label="Card picker"></div>
+      <p id="entry-note" class="note" role="status">0 of 6 cards selected</p>
+      <div id="selection" class="selection" role="group" aria-label="Selected cards. Select a card to remove it."></div>
+      <fieldset class="picker">
+        <legend>Pick cards</legend>
+        <div id="suit-picker" class="suit-picker" role="group" aria-label="Suit"></div>
+        <div id="grid" class="grid" role="group" aria-label="Cards in the selected suit"></div>
+      </fieldset>
       <div class="row">
-        <button type="submit" class="primary">Show splits</button>
+        <button type="submit" id="show-splits" class="primary" disabled>Show splits</button>
+        <button type="button" id="random-hand" class="ghost" disabled>Random hand</button>
         <button type="button" id="clear" class="ghost">Clear</button>
       </div>
-      <p id="entry-note" class="note"></p>
     </form>
 
     <div id="result" class="panel result">
@@ -191,6 +198,7 @@
       </div>
     </fieldset>
     <div class="filter-actions">
+      <button type="button" id="random-match" class="ghost" disabled>Random matching hand</button>
       <button type="button" id="f-reset" class="ghost">Reset filters</button>
       <p id="f-count" class="note" role="status"></p>
     </div>

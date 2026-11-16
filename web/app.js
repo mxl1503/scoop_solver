@@ -1,6 +1,8 @@
 const RANKS = "23456789TJQKA";
 const SUITS = "cdhs";
 const GLYPH = { c: "♣", d: "♦", h: "♥", s: "♠" };
+const SUIT_NAMES = { c: "Clubs", d: "Diamonds", h: "Hearts", s: "Spades" };
+const HAND_SIZE = 6;
 const PAIR_A = [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4];
 const PAIR_B = [1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5];
 const HDR = 64;
@@ -41,6 +43,8 @@ const FILTER_KEYS = {
 
 let buf, u8, dv, ncanon = 0, completed = 0, deals = 0, boards = 0;
 let summary = null;
+let bookLoading = true;
+let bookWeight = 0;
 const LOOKUP_PROMPT = "Choose or type six cards, then select Show splits.";
 
 const $ = (id) => document.getElementById(id);
@@ -48,9 +52,17 @@ const $ = (id) => document.getElementById(id);
 function cardStr(id) {
   return RANKS[id >> 2] + SUITS[id & 3];
 }
+function cardFace(id) {
+  const suit = SUITS[id & 3];
+  return `<span class="r">${RANKS[id >> 2]}</span><span class="s s-${suit}">${GLYPH[suit]}</span>`;
+}
 function cardHtml(id) {
-  const s = SUITS[id & 3];
-  return `<span class="card"><span class="r">${RANKS[id >> 2]}</span><span class="s s-${s}">${GLYPH[s]}</span></span>`;
+  return `<span class="card">${cardFace(id)}</span>`;
+}
+function cardLabel(id) {
+  const rank = RANKS[id >> 2];
+  const name = { A: "Ace", K: "King", Q: "Queen", J: "Jack", T: "Ten" }[rank] || rank;
+  return name + " of " + SUIT_NAMES[SUITS[id & 3]].toLowerCase();
 }
 function cmpArr(a, b) {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
@@ -82,7 +94,7 @@ function parseText(text) {
   let t = "";
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (ch === " " || ch === "," || ch === "-" || ch === "[" || ch === "]") continue;
+    if (/[\s,\[\]-]/.test(ch)) continue;
     if (ch === "1" && text[i + 1] === "0") {
       t += "T";
       i++;
@@ -90,12 +102,13 @@ function parseText(text) {
     }
     t += ch;
   }
-  if (t.length % 2) throw new Error("Card text is incomplete.");
   const out = [];
   for (let i = 0; i < t.length; i += 2) {
     const r = RANKS.indexOf(t[i].toUpperCase());
-    const s = SUITS.indexOf(t[i + 1].toLowerCase());
-    if (r < 0 || s < 0) throw new Error("Bad card " + t.slice(i, i + 2));
+    if (i + 1 === t.length && r >= 0) throw new Error("Add a suit to the last rank, such as 4h.");
+    const suit = t.slice(i + 1, i + 2).toLowerCase();
+    const s = SUITS.indexOf(Object.keys(GLYPH).find((key) => GLYPH[key] === suit) || suit);
+    if (r < 0 || s < 0) throw new Error(`“${t.slice(i, i + 2)}” is invalid. Use a rank and suit, such as 4h.`);
     out.push(r * 4 + s);
   }
   return out;
@@ -296,6 +309,12 @@ function installBytes(bytes) {
   completed = dv.getUint32(12, true);
   deals = dv.getUint16(16, true);
   boards = dv.getUint16(18, true);
+  bookWeight = 0;
+  for (let i = 0; i < ncanon; i++) {
+    const offset = HDR + i * REC;
+    if (u8[offset + 7]) bookWeight += u8[offset + 6];
+  }
+  $("random-hand").disabled = bookWeight === 0;
   hideProgress();
   setStatus(statusLine());
 }
@@ -342,55 +361,141 @@ async function loadBook() {
   installBytes(bin);
 }
 
-function buildGrid() {
-  const grid = $("grid");
-  grid.innerHTML = "";
-  for (let s = 0; s < 4; s++) {
-    for (let r = 12; r >= 0; r--) {
-      const id = r * 4 + s;
-      const b = document.createElement("button");
-      b.type = "button";
-      b.dataset.id = String(id);
-      b.setAttribute("aria-label", RANKS[r] + " of " + ["clubs", "diamonds", "hearts", "spades"][s]);
-      b.innerHTML = `<span class="r">${RANKS[r]}</span><span class="s s-${SUITS[s]}">${GLYPH[SUITS[s]]}</span>`;
-      b.addEventListener("click", () => toggle(id));
-      grid.appendChild(b);
-    }
+let activeSuit = "s";
+
+function buildPicker() {
+  for (const suit of ["s", "h", "d", "c"]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.suit = suit;
+    button.innerHTML = `<span class="s-${suit}" aria-hidden="true">${GLYPH[suit]}</span><span>${SUIT_NAMES[suit]}</span>`;
+    button.addEventListener("click", () => {
+      activeSuit = suit;
+      updateEntry();
+    });
+    $("suit-picker").appendChild(button);
+  }
+  for (let rank = RANKS.length - 1; rank >= 0; rank--) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.rank = rank;
+    button.addEventListener("click", () => toggleCard(Number(button.dataset.card)));
+    $("grid").appendChild(button);
+  }
+  for (let i = 0; i < HAND_SIZE; i++) {
+    const slot = document.createElement("div");
+    slot.className = "selection-slot";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.addEventListener("click", () => {
+      toggleCard(Number(button.dataset.card));
+      if (button.hidden) {
+        const filled = $("selection").querySelectorAll("button:not([hidden])");
+        (filled[filled.length - 1] || $("text")).focus();
+      }
+    });
+    slot.appendChild(button);
+    $("selection").appendChild(slot);
   }
 }
-function selectedIds() {
+
+function readEntry() {
+  let cards;
   try {
-    return parseText($("text").value);
-  } catch {
-    return [];
+    cards = parseText($("text").value);
+  } catch (err) {
+    return { cards: [], unique: new Set(), error: err.message, malformed: true };
+  }
+  const unique = new Set();
+  let duplicate;
+  for (const card of cards) {
+    if (unique.has(card) && duplicate === undefined) duplicate = card;
+    unique.add(card);
+  }
+  let error = "";
+  if (duplicate !== undefined) {
+    error = `${cardLabel(duplicate)} appears more than once. Remove the extra copy.`;
+  } else if (cards.length > HAND_SIZE) {
+    error = `You entered ${cards.length} cards. Remove ${cards.length - HAND_SIZE} to make six.`;
+  }
+  return { cards, unique, error, malformed: false };
+}
+
+function updateEntry() {
+  const { cards, unique, error, malformed } = readEntry();
+  const full = unique.size >= HAND_SIZE;
+  const note = $("entry-note");
+  const message = error || `${unique.size} of ${HAND_SIZE} cards selected`;
+  if (note.textContent !== message) note.textContent = message;
+  $("text").setAttribute("aria-invalid", Boolean(error));
+  $("show-splits").disabled = Boolean(error) || cards.length !== HAND_SIZE;
+
+  for (const button of $("suit-picker").children) {
+    button.setAttribute("aria-pressed", button.dataset.suit === activeSuit);
+  }
+  const suit = SUITS.indexOf(activeSuit);
+  for (const button of $("grid").children) {
+    const id = Number(button.dataset.rank) * SUITS.length + suit;
+    if (button.dataset.card !== String(id)) {
+      button.dataset.card = id;
+      button.innerHTML = cardFace(id);
+      button.setAttribute("aria-label", cardLabel(id));
+    }
+    const selected = unique.has(id);
+    button.setAttribute("aria-pressed", selected);
+    button.disabled = malformed || (full && !selected);
+  }
+  const selected = [...unique];
+  for (const [i, button] of [...$("selection").querySelectorAll("button")].entries()) {
+    const id = selected[i];
+    button.hidden = id === undefined;
+    if (id === undefined || button.dataset.card === String(id)) continue;
+    button.dataset.card = id;
+    button.innerHTML = cardFace(id);
+    button.setAttribute("aria-label", "Remove " + cardLabel(id));
+    button.title = "Remove " + cardLabel(id);
   }
 }
-function syncGrid() {
-  const ids = new Set(selectedIds());
-  const full = ids.size >= 6;
-  $("entry-note").textContent = ids.size ? ids.size + " of 6 cards" : "";
-  for (const b of $("grid").querySelectorAll("button")) {
-    const id = Number(b.dataset.id);
-    const on = ids.has(id);
-    b.classList.toggle("on", on);
-    b.setAttribute("aria-pressed", on);
-    b.disabled = full && !on;
-  }
+
+function editHand(text) {
+  $("text").value = text;
+  updateEntry();
+  showLookupMessage(LOOKUP_PROMPT);
 }
-function toggle(id) {
-  const ids = selectedIds();
-  const i = ids.indexOf(id);
-  if (i >= 0) ids.splice(i, 1);
-  else if (ids.length < 6) ids.push(id);
-  $("text").value = fmtCards(ids);
-  syncGrid();
+
+function toggleCard(id) {
+  const { cards, unique, malformed } = readEntry();
+  if (malformed) return;
+  const i = cards.indexOf(id);
+  if (i >= 0) cards.splice(i, 1);
+  else if (unique.size < HAND_SIZE) cards.push(id);
+  else return;
+  editHand(fmtCards(cards));
 }
 
 function showHand(text) {
-  $("text").value = text;
-  syncGrid();
+  editHand(text);
   $("tab-lookup").click();
   $("entry").requestSubmit();
+}
+
+function showRandomHand(weight, size, indices) {
+  let ticket = Math.floor(Math.random() * weight);
+  for (let k = 0; k < size; k++) {
+    const i = indices ? indices[k] : k;
+    const offset = HDR + i * REC;
+    if (!u8[offset + 7]) continue;
+
+    // Each suit pattern represents a different number of actual six-card hands.
+    ticket -= u8[offset + 6];
+    if (ticket < 0) {
+      const suits = PERMS[Math.floor(Math.random() * PERMS.length)];
+      const cards = readKey(i).map((card) => (card & ~3) | suits[card & 3]);
+      cards.sort((a, b) => b - a);
+      showHand(fmtCards(cards));
+      return;
+    }
+  }
 }
 
 function showLookupMessage(message) {
@@ -398,19 +503,29 @@ function showLookupMessage(message) {
   text.className = "empty";
   text.textContent = message;
   $("result").replaceChildren(text);
+  $("lookup").style.removeProperty("--lookup-width");
+}
+function fitSplitTable() {
+  const lookup = $("lookup");
+  if (lookup.hidden) return;
+  lookup.style.removeProperty("--lookup-width");
+  const wrap = $("result").querySelector(".table-wrap");
+  if (!wrap) return;
+  const overflow = wrap.scrollWidth - wrap.clientWidth;
+  if (overflow > 0) {
+    const width = Math.ceil(lookup.getBoundingClientRect().width + overflow);
+    lookup.style.setProperty("--lookup-width", width + "px");
+  }
+}
+let fitFrame = 0;
+function scheduleFitSplitTable() {
+  cancelAnimationFrame(fitFrame);
+  fitFrame = requestAnimationFrame(fitSplitTable);
 }
 function isSmallLead(gap, se) {
   return gap < Math.max(20, 2 * se);
 }
 function renderResult(input) {
-  if (input.length !== 6) {
-    showLookupMessage(`Enter exactly six cards. You have ${input.length}.`);
-    return;
-  }
-  if (new Set(input).size !== 6) {
-    showLookupMessage("Choose six distinct cards.");
-    return;
-  }
   rememberHand(fmtCards(input));
   if (!buf) {
     showLookupMessage("The split book is unavailable right now.");
@@ -473,64 +588,192 @@ function renderResult(input) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+  fitSplitTable();
 }
 function bestSplitLabel(hand, s) {
   const sp = splitOf(hand, s);
   return sp.he.map(cardStr).join("");
 }
 
-function tendencyTable(title, note, heading, columns, rows) {
-  const labels = columns.map(([label]) => `<th scope="col" class="num">${label}</th>`).join("");
-  const body = rows.map((row) => {
-    const cells = columns.map(([, key]) => `<td class="num">${pct(row[key] ?? 0)}</td>`).join("");
-    return `<tr><th scope="row">${row.label}</th>${cells}</tr>`;
-  }).join("");
-  return `<section class="panel"><h2>${title}</h2><p class="fine">${note}</p>
-    <div class="table-wrap"><table>
-      <thead><tr><th scope="col">${heading}</th>${labels}</tr></thead>
-      <tbody>${body}</tbody>
-    </table></div></section>`;
+function collectSplitInsights() {
+  const pairRanks = Array.from({ length: 13 }, () => ({ weight: 0, holdemBest: 0, loss: [0, 0, 0] }));
+  const suitGroups = new Map();
+  const rankCounts = new Uint8Array(13);
+  const suitCounts = new Uint8Array(4);
+  // Pack suit counts in three bits each so removing the two Hold’em cards is a subtraction.
+  const suitUnit = [1, 8, 64, 512];
+  const doubleSuited = new Set(suitUnit.flatMap((first, i) => suitUnit.slice(i + 1).map(second => 2 * (first + second))));
+  let totalWeight = 0;
+
+  for (let i = 0; i < ncanon; i++) {
+    const o = HDR + i * REC;
+    if (!u8[o + 7]) continue;
+    const weight = u8[o + 6];
+    totalWeight += weight;
+    rankCounts.fill(0);
+    suitCounts.fill(0);
+    let suitKey = 0;
+    let pairRank = -1;
+    let repeatedRanks = 0;
+    for (let k = 0; k < 6; k++) {
+      const card = u8[o + k];
+      const rank = card >> 2;
+      const suit = card & 3;
+      if (++rankCounts[rank] === 2) {
+        pairRank = rank;
+        repeatedRanks++;
+      }
+      suitCounts[suit]++;
+      suitKey += suitUnit[suit];
+    }
+    const onePair = repeatedRanks === 1 && rankCounts[pairRank] === 2;
+    let pairedSuits = 0;
+    for (const count of suitCounts) if (count >= 2) pairedSuits++;
+    const canDoubleSuit = pairedSuits >= 2;
+    if (!onePair && !canDoubleSuit) continue;
+
+    const pairBest = [-Infinity, -Infinity, -Infinity]; // PLO, split, Hold’em
+    let bestDouble = -Infinity;
+    let bestOther = -Infinity;
+    for (let q = 0; q < 15; q++) {
+      const a = u8[o + PAIR_A[q]];
+      const b = u8[o + PAIR_B[q]];
+      const ev = dv.getInt16(o + 8 + 2 * q, true);
+      if (onePair) {
+        const placement = Number((a >> 2) === pairRank) + Number((b >> 2) === pairRank);
+        pairBest[placement] = Math.max(pairBest[placement], ev);
+      }
+      if (canDoubleSuit) {
+        const ploKey = suitKey - suitUnit[a & 3] - suitUnit[b & 3];
+        if (doubleSuited.has(ploKey)) bestDouble = Math.max(bestDouble, ev);
+        else bestOther = Math.max(bestOther, ev);
+      }
+    }
+
+    if (onePair) {
+      const group = pairRanks[pairRank];
+      const best = Math.max(...pairBest);
+      group.weight += weight;
+      if (pairBest[2] === best) group.holdemBest += weight;
+      for (let placement = 0; placement < 3; placement++) {
+        group.loss[placement] += (best - pairBest[placement]) * weight;
+      }
+    }
+    if (canDoubleSuit) {
+      const pattern = sig4(suitCounts);
+      let group = suitGroups.get(pattern);
+      if (!group) {
+        group = { weight: 0, doubleAhead: 0, doubleLoss: 0, otherLoss: 0 };
+        suitGroups.set(pattern, group);
+      }
+      group.weight += weight;
+      if (bestDouble > bestOther) group.doubleAhead += weight;
+      group.doubleLoss += Math.max(0, bestOther - bestDouble) * weight;
+      group.otherLoss += Math.max(0, bestDouble - bestOther) * weight;
+    }
+  }
+  return { pairRanks, suitGroups, totalWeight };
 }
+
+function insightTable(heading, columns, rows) {
+  return `<div class="table-wrap"><table>
+    <thead><tr><th scope="col">${heading}</th>${columns.map(label => `<th scope="col" class="num">${label}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(([label, ...cells]) => `<tr><th scope="row">${label}</th>${cells.map(cell => `<td class="num">${cell}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function tendencyTable(title, heading, columns, rows) {
+  return `<h3>${title}</h3>${insightTable(heading, columns.map(([label]) => label),
+    rows.map(row => [row.label, ...columns.map(([, key]) => pct(row[key] ?? 0))]))}`;
+}
+
+let splitInsights = null;
 
 function renderTend() {
   const host = $("tend-body");
-  if (!summary || !summary.completed) {
-    host.innerHTML = '<p class="panel empty">Tendencies are unavailable.</p>';
+  if (!buf || !completed) {
+    host.innerHTML = `<p class="panel empty">${bookLoading ? "Loading the split book…" : "The split book is unavailable."}</p>`;
     return;
   }
-  const s = summary;
-  const metrics = [
-    ["Highest rank in Hold’em", pct(s.topInHoldem), "At least one card of that rank"],
-    ["Pair-first heuristic gap", bb(s.heurLoss) + " BB", "EV below the best fixed split"],
-    ["Random split gap", bb(s.randLoss) + " BB", "EV below the best fixed split"],
-    ["Mean NashConv", Number(s.meanNashConv).toFixed(3) + " BB", "Total deviation gain across six seats on sampled boards"],
+  splitInsights ??= collectSplitInsights();
+  const { pairRanks, suitGroups, totalWeight } = splitInsights;
+  const s = summary?.completed === completed ? summary : null;
+  const cost = (loss, weight) => (loss / weight / 1000).toFixed(3);
+  const roundedPct = (part, whole) => Math.round(100 * part / whole) + "%";
+  const pairRows = pairRanks.flatMap((group, rank) => group.weight ? [[
+    RANKS[rank].repeat(2), pct(group.weight / totalWeight), pct(group.holdemBest / group.weight),
+    cost(group.loss[2], group.weight), cost(group.loss[0], group.weight), cost(group.loss[1], group.weight),
+  ]] : []).reverse();
+  const suitRows = [...suitGroups].sort((a, b) => b[1].weight - a[1].weight).map(([pattern, group]) => [
+    pattern, pct(group.weight / totalWeight), pct(group.doubleAhead / group.weight),
+    cost(group.doubleLoss, group.weight), cost(group.otherLoss, group.weight),
+  ]);
+
+  const aces = pairRanks[12];
+  const fives = pairRanks[3];
+  const fourTwo = suitGroups.get("4-2");
+  const twoTwo = suitGroups.get("2-2-1-1");
+  const examples = [
+    { hand: "AcJd6d6c5c4c", note: "4-2 · Keep 66 in double-suited PLO", holdem: "5c4c", plo: "AcJd6d6c" },
+    { hand: "AcJd6d6h5c4c", note: "3-2-1 · Move 66 to Hold’em", holdem: "6h6d", plo: "AcJd5c4c" },
   ];
-  const metricHtml = metrics.map(([label, value, note]) =>
-    `<div class="metric"><span>${label}</span><b>${value}</b><span>${note}</span></div>`).join("");
-  const paired = (s.pairing || []).filter((row) => row.pairHe != null);
-  const examples = (title, hands = []) => `<section class="panel"><h2>${title}</h2>${hands.slice(0, 6).map((hand) => `
-    <button type="button" class="handbtn" data-cards="${hand.cards}">
-      <span>${hand.cards}<br><span class="fine">${hand.best}</span></span>
-      <b class="${cls(hand.ev)}">${bb(hand.ev)} BB</b>
-    </button>`).join("")}</section>`;
+  const showExamples = examples.every(({ hand }) => {
+    const key = lexMin(parseText(hand)).asc.reverse();
+    const i = findKey(key);
+    return i >= 0 && u8[HDR + i * REC + 7] > 0;
+  });
   host.innerHTML = `
     <section class="panel">
-      <h2>Six-max split tendencies</h2>
-      <p class="fine">The solver samples five random opponent hands for each starting hand. All players choose approximate equilibrium splits with every hole card known. Frequencies weight each suit pattern by the number of actual hands it represents.</p>
-      ${s.finished ? "" : `<p class="fine">Partial catalogue · ${Number(s.completed).toLocaleString()} of ${Number(s.canonical).toLocaleString()} suit patterns solved.</p>`}
+      <h2>Six-max split strategy</h2>
+      <p class="fine">Compare splits you can commit to using your six cards. Costs are average EV lost versus the best estimated split in the catalogue.</p>
+      ${completed === ncanon ? "" : `<p class="fine">Partial catalogue · ${completed.toLocaleString()} of ${ncanon.toLocaleString()} suit patterns solved.</p>`}
     </section>
-    <div class="metrics">${metricHtml}</div>
-    ${tendencyTable("Which Hold’em shapes get picked?", "Compare the equilibrium choice with picking one of the 15 splits uniformly. The pair-first heuristic takes the highest pocket pair available, or the two highest cards if there is no pair.", "Hold’em shape",
-      [["Equilibrium", "share"], ["Random split", "available"]], s.heShape || [])}
-    ${tendencyTable("Where does the highest repeated rank go?", "Within each hand type, ‘Pocket pair in Hold’em’ means two cards of that rank go to Hold’em. ‘Across both’ means one goes to Hold’em and the rest go to PLO.", "Six-card hand",
-      [["Hand frequency", "share"], ["Pocket pair in Hold’em", "pairHe"], ["All in PLO", "pairPlo"], ["Across both", "pairSplit"]], paired)}
-    ${tendencyTable("How do six-card suits affect the split?", "Each choice rate is conditional on the six-card suit pattern in that row. Suited Hold’em and double-suited PLO can occur in the same split.", "Six-card suits",
-      [["Hand frequency", "share"], ["Suited Hold’em", "heSuited"], ["Double-suited PLO", "ds"]], s.suits || [])}
-    ${tendencyTable("Which PLO shapes get picked?", "Each cell is a share of all equilibrium choices. The total column adds across pairing types.", "PLO suits",
-      [["Unpaired", "unpaired"], ["One pair", "one pair"], ["Two pair", "two pair"], ["Trips+", "trips+"], ["Total", "total"]], (s.plo || []).map((row) => ({ ...row, label: row.suits })))}
-    <div class="two">${examples("Highest estimated EV", s.strongest)}${examples("Lowest estimated EV", s.weakest)}</div>
-    <p class="fine">The examples are ranked by estimated EV of the best fixed split. Close rankings can change with a fresh sample.</p>`;
-  host.querySelectorAll(".handbtn").forEach((button) => button.addEventListener("click", () => showHand(button.dataset.cards)));
+    ${pairRows.length ? `<section class="panel">
+      <h2>Where should the pair go?</h2>
+      ${aces.weight && fives.weight ? `<p>Start by checking premium pairs in Hold’em. With exactly one pair, AA in Hold’em is best or tied ${roundedPct(aces.holdemBest, aces.weight)} of the time, versus ${roundedPct(fives.holdemBest, fives.weight)} for 55.</p>` : ""}
+      <details>
+        <summary>See each pair rank</summary>
+        <p class="fine">Hands with exactly one pair. Each cost is in BB per hand within that row, using the best split that puts both cards in Hold’em, both in PLO, or one in each.</p>
+        ${insightTable("Pair", ["Share of all hands", "Hold’em best or tied", "Hold’em cost (BB)", "PLO cost (BB)", "Split cost (BB)"], pairRows)}
+      </details>
+    </section>` : ""}
+    ${suitRows.length ? `<section class="panel">
+      <h2>When is double-suited PLO worth it?</h2>
+      ${fourTwo && twoTwo ? `<p>With 4-2 suits, double-suited PLO beats the best alternative in ${roundedPct(fourTwo.doubleAhead, fourTwo.weight)} of hands. With 2-2-1-1, it wins in ${roundedPct(twoTwo.doubleAhead, twoTwo.weight)}. In 4-2 you can choose two cards from the four-card suit for Hold’em. In 2-2-1-1 you have to take the two singletons.</p>` : ""}
+      <details>
+        <summary>See each suit pattern</summary>
+        <p class="fine">Includes hands where both choices are possible. “Double-suited ahead” counts strict EV wins. Each cost is in BB per hand within that row.</p>
+        ${insightTable("Six-card suits", ["Share of all hands", "Double-suited ahead", "Make it (BB cost)", "Skip it (BB cost)"], suitRows)}
+      </details>
+    </section>` : ""}
+    ${showExamples ? `<section class="panel">
+      <h2>One suit change flips the split</h2>
+      <p>Change 6♣ to 6♥. In the first hand, 5♣4♣ in Hold’em preserves a pair and two suits in PLO. In the second, 66 in Hold’em has the higher EV.</p>
+      <div class="two insight-examples">${examples.map(({ hand, note, holdem, plo }) => `
+        <button type="button" class="handbtn" data-cards="${hand}">
+          <span><span class="insight-cards">${parseText(hand).map(cardHtml).join("")}</span><span class="fine">${note}</span></span>
+          <span class="insight-split">Hold’em ${parseText(holdem).map(id => RANKS[id >> 2] + GLYPH[SUITS[id & 3]]).join(" ")}<br>PLO ${parseText(plo).map(id => RANKS[id >> 2] + GLYPH[SUITS[id & 3]]).join(" ")}</span>
+        </button>`).join("")}</div>
+      <p class="fine">Confirmed in a separate solve with 2,400 opponent deals and 1,000 boards per deal. Select either hand to open its catalogue splits.</p>
+    </section>` : ""}
+    ${s?.completed ? `<section class="panel">
+      <h2>Pair-first benchmark</h2>
+      <p>Taking the highest pocket pair, or the two highest cards when unpaired, costs <strong>${Number(s.heurLoss).toFixed(3)} BB per hand</strong> on average versus the catalogue’s best fixed split.</p>
+    </section>
+    <details class="panel insight-reference">
+      <summary>Split frequencies</summary>
+      <p class="fine">These frequencies are for equilibrium players who can see everyone’s cards. The highest rank appears in Hold’em ${pct(s.topInHoldem)} of the time.</p>
+      ${tendencyTable("Hold’em shapes", "Hold’em shape", [["Equilibrium", "share"], ["Random split", "available"]], s.heShape || [])}
+      ${tendencyTable("Highest repeated rank", "Six-card hand", [["Hand frequency", "share"], ["Pocket pair in Hold’em", "pairHe"], ["All in PLO", "pairPlo"], ["Across both", "pairSplit"]], (s.pairing || []).filter(row => row.pairHe != null))}
+      ${tendencyTable("PLO shapes", "PLO suits", [["Unpaired", "unpaired"], ["One pair", "one pair"], ["Two pair", "two pair"], ["Trips+", "trips+"], ["Total", "total"]], (s.plo || []).map(row => ({ ...row, label: row.suits })))}
+    </details>` : ""}
+    <details class="panel insight-reference">
+      <summary>Methodology</summary>
+      <p class="fine">The catalogue samples ${deals} opponent deals and ${boards} boards per deal for each starting hand. It estimates each fixed split’s EV against opponents who play an approximate full-information equilibrium. Each suit pattern is weighted by the number of actual hands it represents.</p>
+      <p class="fine">Close EVs can switch order on a fresh sample. Selecting the highest estimated EV from the same sample can overstate the size of the gap.</p>
+      ${s?.completed ? `<p class="fine">A uniform random split costs ${Number(s.randLoss).toFixed(3)} BB per hand versus the best estimated fixed split. Mean NashConv is ${Number(s.meanNashConv).toFixed(3)} BB across all six seats on the sampled boards.</p>` : ""}
+    </details>`;
+  host.querySelectorAll("button[data-cards]").forEach(button => button.addEventListener("click", () => showHand(button.dataset.cards)));
 }
 
 const hand6 = new Uint8Array(6);
@@ -590,6 +833,7 @@ let browseIdx = new Uint32Array(0);
 let browseGap = new Int16Array(0);
 let browseOrder = new Uint32Array(0);
 let browseN = 0;
+let browseWeight = 0;
 let browseShown = 40;
 let browseDirty = true;
 let browseTimer = 0;
@@ -598,6 +842,7 @@ function runBrowse() {
   browseDirty = false;
   const host = $("browse-list");
   const count = $("f-count");
+  $("random-match").disabled = true;
   if (!buf) {
     count.textContent = "";
     host.innerHTML = `<p class="empty">The dataset is not loaded yet.</p>`;
@@ -700,6 +945,8 @@ function runBrowse() {
   browseGap = gapA;
   browseOrder = order;
   browseN = n;
+  browseWeight = weight;
+  $("random-match").disabled = browseWeight === 0;
   browseShown = 40;
   count.textContent = n
     ? `${n.toLocaleString()} solved patterns · ${weight.toLocaleString()} real hands`
@@ -738,6 +985,7 @@ function renderBrowseList() {
 
 function scheduleBrowse() {
   browseDirty = true;
+  $("random-match").disabled = true;
   clearTimeout(browseTimer);
   if ($("browse").hidden) return;
   $("f-count").textContent = "Filtering…";
@@ -753,10 +1001,12 @@ function showTab(which) {
   $("tab-tend").classList.toggle("on", which === "tend");
   if (which === "tend") renderTend();
   if (which === "browse" && browseDirty) runBrowse();
+  if (which === "lookup") scheduleFitSplitTable();
 }
 
-buildGrid();
-syncGrid();
+buildPicker();
+updateEntry();
+window.addEventListener("resize", scheduleFitSplitTable);
 $("tab-lookup").addEventListener("click", () => showTab("lookup"));
 $("tab-browse").addEventListener("click", () => showTab("browse"));
 $("tab-tend").addEventListener("click", () => showTab("tend"));
@@ -776,6 +1026,8 @@ $("filters").addEventListener("click", (event) => {
   writeFilters();
   scheduleBrowse();
 });
+$("random-hand").addEventListener("click", () => showRandomHand(bookWeight, ncanon));
+$("random-match").addEventListener("click", () => showRandomHand(browseWeight, browseN, browseIdx));
 $("f-reset").addEventListener("click", () => {
   for (const id of Object.keys(FILTER_KEYS)) selectFilters($(id), []);
   writeFilters();
@@ -790,20 +1042,19 @@ $("browse-list").addEventListener("click", (e) => {
   const row = e.target.closest("[data-i]");
   if (row) showHand(fmtCards(readKey(Number(row.dataset.i))));
 });
-$("text").addEventListener("input", syncGrid);
+$("text").addEventListener("input", () => {
+  updateEntry();
+  showLookupMessage(LOOKUP_PROMPT);
+});
 $("entry").addEventListener("submit", (e) => {
   e.preventDefault();
-  try {
-    renderResult(parseText($("text").value));
-  } catch (err) {
-    showLookupMessage(err.message);
-  }
+  const { cards, error } = readEntry();
+  if (error || cards.length !== HAND_SIZE) return;
+  renderResult(cards);
 });
 $("clear").addEventListener("click", () => {
-  $("text").value = "";
-  syncGrid();
+  editHand("");
   rememberHand("");
-  showLookupMessage(LOOKUP_PROMPT);
   $("text").focus();
 });
 $("result").addEventListener("click", async (e) => {
@@ -821,7 +1072,7 @@ async function boot() {
   const hand = params.get("hand");
   if (hand) {
     $("text").value = hand;
-    syncGrid();
+    updateEntry();
   } else if (hasFilterQuery()) {
     showTab("browse");
   }
@@ -835,6 +1086,8 @@ async function boot() {
     setStatus("Split book unavailable");
     showLookupMessage(err.message === "missing" ? "The split book has not been published here yet." : err.message);
   }
+  bookLoading = false;
+  if (!$("tend").hidden) renderTend();
   await loadSummary();
 }
 boot();
