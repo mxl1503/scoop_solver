@@ -1,0 +1,93 @@
+Scoop solver - 4 players, ante 1 BB each, pot 4 BB
+Boards: 20000 sampled (of 98280 possible), shared by all players and both hands   [0.01s]
+Solver: full game, 50625 split profiles (15^4) x 20000 boards, regret-matching+ 200 iters   [0.05s]
+Pure-strategy Nash equilibria found: 1
+Equilibrium exploitability (NashConv): 0.00000 BB
+At equilibrium: someone scoops 20.2% of boards, antes returned 79.8%
+
+Player 1: AsAhKdQd7c6c   (one pair, suits 2-2-1-1)
+  equilibrium split: AsAh | KdQd7c6c (100.0%)
+  equilibrium EV: -0.0186 BB
+  rank split  HE | PLO          shape                           EV(BB)    scoop     chop     lose  eq-freq
+  1    AsAh | KdQd7c6c          pocket pair / double-suited    -0.0186     4.6%    79.8%    15.7%   100.0%
+  2    7c6c | AsAhKdQd          suited / single-suited         -0.0262     3.3%    84.0%    12.7%     0.0%
+  3    KdQd | AsAh7c6c          suited / single-suited         -0.0746     2.4%    82.9%    14.7%     0.0%
+  4    Kd7c | AsAhQd6c          offsuit / rainbow              -0.1158     2.3%    79.1%    18.6%     0.0%
+  5    Ah7c | AsKdQd6c          offsuit / single-suited        -0.1291     2.6%    76.6%    20.8%     0.0%
+  6    As7c | AhKdQd6c          offsuit / single-suited        -0.1303     2.6%    76.5%    20.9%     0.0%
+  7    Kd6c | AsAhQd7c          offsuit / rainbow              -0.1344     1.8%    79.2%    19.0%     0.0%
+  8    Ah6c | AsKdQd7c          offsuit / single-suited        -0.1464     2.4%    76.0%    21.7%     0.0%
+  9    As6c | AhKdQd7c          offsuit / single-suited        -0.1475     2.4%    75.8%    21.8%     0.0%
+  10   Qd7c | AsAhKd6c          offsuit / rainbow              -0.1576     1.6%    78.0%    20.4%     0.0%
+  11   AhQd | AsKd7c6c          offsuit / single-suited        -0.1913     0.8%    77.5%    21.6%     0.0%
+  12   AsQd | AhKd7c6c          offsuit / single-suited        -0.1923     0.8%    77.4%    21.7%     0.0%
+  13   Qd6c | AsAhKd7c          offsuit / rainbow              -0.1961     0.6%    78.2%    21.3%     0.0%
+  14   AhKd | AsQd7c6c          offsuit / single-suited        -0.2077     0.1%    78.9%    21.0%     0.0%
+  15   AsKd | AhQd7c6c          offsuit / single-suited        -0.2089     0.1%    78.8%    21.1%     0.0%
+
+Player 2: QcJsTc3s2h2d   (one pair, suits 2-2-1-1)
+  equilibrium split: 2h2d | QcJsTc3s (100.0%)
+  equilibrium EV: +0.1770 BB
+  rank split  HE | PLO          shape                           EV(BB)    scoop     chop     lose  eq-freq
+  1    2h2d | QcJsTc3s          pocket pair / double-suited    +0.1770     9.5%    79.8%    10.8%   100.0%
+  2    Js3s | QcTc2h2d          suited / single-suited         +0.1278     7.9%    81.0%    11.0%     0.0%
+  3    3s2d | QcJsTc2h          offsuit / single-suited        +0.0460     5.6%    82.1%    12.3%     0.0%
+  4    3s2h | QcJsTc2d          offsuit / single-suited        +0.0440     5.6%    81.9%    12.5%     0.0%
+  5    Js2d | QcTc3s2h          offsuit / single-suited        +0.0209     5.2%    81.3%    13.5%     0.0%
+  6    Js2h | QcTc3s2d          offsuit / single-suited        +0.0182     5.2%    81.1%    13.7%     0.0%
+  7    QcTc | Js3s2h2d          suited / single-suited         -0.0175     2.8%    87.2%    10.1%     0.0%
+  8    Tc3s | QcJs2h2d          offsuit / rainbow              -0.0188     4.2%    81.1%    14.6%     0.0%
+  9    JsTc | Qc3s2h2d          offsuit / rainbow              -0.0438     3.3%    82.3%    14.4%     0.0%
+  10   QcJs | Tc3s2h2d          offsuit / rainbow              -0.0744     2.7%    81.6%    15.7%     0.0%
+  11   Tc2d | QcJs3s2h          offsuit / single-suited        -0.0794     2.8%    81.0%    16.2%     0.0%
+  12   Qc3s | JsTc2h2d          offsuit / rainbow              -0.0801     2.5%    82.1%    15.4%     0.0%
+  13   Tc2h | QcJs3s2d          offsuit / single-suited        -0.0828     2.7%    80.8%    16.5%     0.0%
+  14   Qc2d | JsTc3s2h          offsuit / single-suited        -0.1155     1.6%    81.9%    16.5%     0.0%
+  15   Qc2h | JsTc3s2d          offsuit / single-suited        -0.1190     1.6%    81.6%    16.7%     0.0%
+
+Player 3: AcQh8s7h6d4s   (no pair, suits 2-2-1-1)
+  equilibrium split: 8s4s | AcQh7h6d (100.0%)
+  equilibrium EV: -0.0647 BB
+  rank split  HE | PLO          shape                           EV(BB)    scoop     chop     lose  eq-freq
+  1    8s4s | AcQh7h6d          suited / single-suited         -0.0647     3.4%    79.8%    16.8%   100.0%
+  2    8s6d | AcQh7h4s          offsuit / single-suited        -0.0658     3.8%    78.4%    17.9%     0.0%
+  3    6d4s | AcQh8s7h          offsuit / single-suited        -0.0872     3.0%    79.2%    17.8%     0.0%
+  4    Qh7h | Ac8s6d4s          suited / single-suited         -0.0996     2.6%    79.5%    17.9%     0.0%
+  5    7h6d | AcQh8s4s          offsuit / single-suited        -0.1091     1.5%    83.1%    15.4%     0.0%
+  6    Ac4s | Qh8s7h6d          offsuit / single-suited        -0.1174     1.6%    82.1%    16.4%     0.0%
+  7    7h4s | AcQh8s6d          offsuit / rainbow              -0.1298     2.5%    77.1%    20.4%     0.0%
+  8    Ac8s | Qh7h6d4s          offsuit / single-suited        -0.1317     1.1%    82.5%    16.4%     0.0%
+  9    8s7h | AcQh6d4s          offsuit / rainbow              -0.1331     2.1%    78.2%    19.7%     0.0%
+  10   Qh4s | Ac8s7h6d          offsuit / rainbow              -0.1414     1.1%    81.5%    17.4%     0.0%
+  11   Qh8s | Ac7h6d4s          offsuit / rainbow              -0.1460     0.7%    82.6%    16.7%     0.0%
+  12   AcQh | 8s7h6d4s          offsuit / single-suited        -0.1522     0.0%    84.7%    15.3%     0.0%
+  13   Ac7h | Qh8s6d4s          offsuit / single-suited        -0.1808     0.5%    80.0%    19.5%     0.0%
+  14   Ac6d | Qh8s7h4s          offsuit / double-suited        -0.1911     0.0%    80.7%    19.2%     0.0%
+  15   Qh6d | Ac8s7h4s          offsuit / single-suited        -0.1914     0.0%    80.8%    19.2%     0.0%
+
+Player 4: KhQsTd9d6s5s   (no pair, suits 3-2-1)
+  equilibrium split: 6s5s | KhQsTd9d (100.0%)
+  equilibrium EV: -0.0937 BB
+  rank split  HE | PLO          shape                           EV(BB)    scoop     chop     lose  eq-freq
+  1    6s5s | KhQsTd9d          suited / single-suited         -0.0937     2.7%    79.8%    17.5%   100.0%
+  2    Td9d | KhQs6s5s          suited / three-flush           -0.1440     1.2%    80.9%    17.9%     0.0%
+  3    9d6s | KhQsTd5s          offsuit / single-suited        -0.1643     1.2%    78.6%    20.2%     0.0%
+  4    Kh5s | QsTd9d6s          offsuit / double-suited        -0.1667     1.2%    78.6%    20.2%     0.0%
+  5    Qs5s | KhTd9d6s          suited / single-suited         -0.1699     1.6%    76.7%    21.7%     0.0%
+  6    Td5s | KhQs9d6s          offsuit / single-suited        -0.1717     1.4%    77.4%    21.2%     0.0%
+  7    9d5s | KhQsTd6s          offsuit / single-suited        -0.1728     1.1%    78.4%    20.5%     0.0%
+  8    QsTd | Kh9d6s5s          offsuit / single-suited        -0.1758     0.8%    79.1%    20.1%     0.0%
+  9    Qs9d | KhTd6s5s          offsuit / single-suited        -0.1802     1.1%    77.7%    21.2%     0.0%
+  10   Kh6s | QsTd9d5s          offsuit / double-suited        -0.1859     0.5%    79.6%    19.9%     0.0%
+  11   KhQs | Td9d6s5s          offsuit / double-suited        -0.1863     0.4%    79.7%    19.9%     0.0%
+  12   Kh9d | QsTd6s5s          offsuit / three-flush          -0.1868     0.7%    78.5%    20.8%     0.0%
+  13   Qs6s | KhTd9d5s          suited / single-suited         -0.1902     0.6%    78.4%    21.0%     0.0%
+  14   Td6s | KhQs9d5s          offsuit / single-suited        -0.1992     0.4%    78.3%    21.2%     0.0%
+  15   KhTd | Qs9d6s5s          offsuit / three-flush          -0.2014     0.5%    78.0%    21.5%     0.0%
+
+Joint scoop vs independence assumption (equilibrium splits, outright wins only):
+  player  split                       win HE   win PLO       HE x PLO   true scoop
+  1       AsAh | KdQd7c6c              40.6%     11.1%           4.5%         4.6%
+  2       2h2d | QcJsTc3s              23.1%     34.5%           8.0%         9.5%
+  3       8s4s | AcQh7h6d              18.5%     18.8%           3.5%         3.4%
+  4       6s5s | KhQsTd9d              17.5%     19.0%           3.3%         2.7%

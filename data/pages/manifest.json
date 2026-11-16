@@ -1,0 +1,12 @@
+{
+  "format": "SCOOP6H1-gzip",
+  "chunks": [
+    "c0.bin.gz",
+    "c1.bin.gz",
+    "c2.bin.gz",
+    "c3.bin.gz",
+    "c4.bin.gz",
+    "c5.bin.gz",
+    "c6.bin.gz"
+  ]
+}

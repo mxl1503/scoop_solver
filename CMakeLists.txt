@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 3.16)
+project(scoop_solver CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+option(SCOOP_NATIVE "Optimise for the build machine's CPU (AVX2 on MSVC, -march=native elsewhere)" ON)
+
+add_executable(scoop src/main.cpp src/evaluator.cpp src/engine.cpp src/solver.cpp src/catalog.cpp)
+
+if(MSVC)
+  target_compile_options(scoop PRIVATE /W3 /permissive- /EHsc $<$<CONFIG:Release>:/O2 /Oi /GL>)
+  target_link_options(scoop PRIVATE $<$<CONFIG:Release>:/LTCG>)
+  if(SCOOP_NATIVE)
+    target_compile_options(scoop PRIVATE /arch:AVX2)
+  endif()
+else()
+  target_compile_options(scoop PRIVATE -Wall -Wextra $<$<CONFIG:Release>:-O3>)
+  if(SCOOP_NATIVE)
+    target_compile_options(scoop PRIVATE -march=native)
+  endif()
+  find_package(Threads REQUIRED)
+  target_link_libraries(scoop PRIVATE Threads::Threads)
+endif()

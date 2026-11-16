@@ -1,0 +1,8 @@
+# Local builds and generated catalogue data
+/build/
+/data/sixmax/
+/data/pages/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scoop — six-max splits</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <p class="eyebrow">Scoop · 6 players · ante 1 BB</p>
+    <h1>How to split six cards</h1>
+  </div>
+  <div class="status-block">
+    <p id="status" class="status">Loading the split book…</p>
+    <div id="progress" class="progress" hidden><i id="progress-bar"></i></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button type="button" id="tab-lookup" class="on">Look up a hand</button>
+  <button type="button" id="tab-browse">Browse</button>
+  <button type="button" id="tab-tend">Six-max tendencies</button>
+</nav>
+
+<section id="lookup">
+  <div class="layout">
+    <form id="entry" class="panel">
+      <label class="field">
+        <span>Six cards</span>
+        <input id="text" autocomplete="off" spellcheck="false" placeholder="AsAhKdQd7c6c" maxlength="40">
+      </label>
+      <div id="grid" class="grid" aria-label="Card picker"></div>
+      <div class="row">
+        <button type="submit" class="primary">Show splits</button>
+        <button type="button" id="clear" class="ghost">Clear</button>
+      </div>
+      <p id="entry-note" class="note"></p>
+    </form>
+
+    <div id="result" class="panel result">
+      <p class="empty">Choose or type six cards, then select Show splits.</p>
+    </div>
+  </div>
+</section>
+
+<section id="browse" hidden>
+  <div class="panel filters" id="filters">
+    <h2 class="filter-head">The six cards</h2>
+    <fieldset id="f-pair" class="filter-group">
+      <legend>Pairing</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="no pair" aria-pressed="false">No pair</button>
+        <button type="button" data-value="one pair" aria-pressed="false">One pair</button>
+        <button type="button" data-value="two pair" aria-pressed="false">Two pair</button>
+        <button type="button" data-value="three pair" aria-pressed="false">Three pair</button>
+        <button type="button" data-value="trips" aria-pressed="false">Trips</button>
+        <button type="button" data-value="trips + pair" aria-pressed="false">Trips + pair</button>
+        <button type="button" data-value="two trips" aria-pressed="false">Two trips</button>
+        <button type="button" data-value="quads" aria-pressed="false">Quads</button>
+        <button type="button" data-value="quads + pair" aria-pressed="false">Quads + pair</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-high" class="filter-group">
+      <legend>Highest card</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="12" aria-pressed="false">A</button>
+        <button type="button" data-value="11" aria-pressed="false">K</button>
+        <button type="button" data-value="10" aria-pressed="false">Q</button>
+        <button type="button" data-value="9" aria-pressed="false">J</button>
+        <button type="button" data-value="8" aria-pressed="false">T</button>
+        <button type="button" data-value="7" aria-pressed="false">9</button>
+        <button type="button" data-value="6" aria-pressed="false">8</button>
+        <button type="button" data-value="5" aria-pressed="false">7</button>
+        <button type="button" data-value="4" aria-pressed="false">6</button>
+        <button type="button" data-value="3" aria-pressed="false">5</button>
+        <button type="button" data-value="2" aria-pressed="false">4</button>
+        <button type="button" data-value="1" aria-pressed="false">3</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-pairrank" class="filter-group">
+      <legend>Highest pair</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="12" aria-pressed="false">AA</button>
+        <button type="button" data-value="11" aria-pressed="false">KK</button>
+        <button type="button" data-value="10" aria-pressed="false">QQ</button>
+        <button type="button" data-value="9" aria-pressed="false">JJ</button>
+        <button type="button" data-value="8" aria-pressed="false">TT</button>
+        <button type="button" data-value="7" aria-pressed="false">99</button>
+        <button type="button" data-value="6" aria-pressed="false">88</button>
+        <button type="button" data-value="5" aria-pressed="false">77</button>
+        <button type="button" data-value="4" aria-pressed="false">66</button>
+        <button type="button" data-value="3" aria-pressed="false">55</button>
+        <button type="button" data-value="2" aria-pressed="false">44</button>
+        <button type="button" data-value="1" aria-pressed="false">33</button>
+        <button type="button" data-value="0" aria-pressed="false">22</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-has" class="filter-group" data-multiple>
+      <legend>Contains all selected ranks</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="12" aria-pressed="false">A</button>
+        <button type="button" data-value="11" aria-pressed="false">K</button>
+        <button type="button" data-value="10" aria-pressed="false">Q</button>
+        <button type="button" data-value="9" aria-pressed="false">J</button>
+        <button type="button" data-value="8" aria-pressed="false">T</button>
+        <button type="button" data-value="7" aria-pressed="false">9</button>
+        <button type="button" data-value="6" aria-pressed="false">8</button>
+        <button type="button" data-value="5" aria-pressed="false">7</button>
+        <button type="button" data-value="4" aria-pressed="false">6</button>
+        <button type="button" data-value="3" aria-pressed="false">5</button>
+        <button type="button" data-value="2" aria-pressed="false">4</button>
+        <button type="button" data-value="1" aria-pressed="false">3</button>
+        <button type="button" data-value="0" aria-pressed="false">2</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-suits" class="filter-group">
+      <legend>Suits</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any pattern</button>
+        <button type="button" data-value="3-2-1" aria-pressed="false">3-2-1</button>
+        <button type="button" data-value="2-2-1-1" aria-pressed="false">2-2-1-1</button>
+        <button type="button" data-value="3-1-1-1" aria-pressed="false">3-1-1-1</button>
+        <button type="button" data-value="2-2-2" aria-pressed="false">2-2-2</button>
+        <button type="button" data-value="4-1-1" aria-pressed="false">4-1-1</button>
+        <button type="button" data-value="4-2" aria-pressed="false">4-2</button>
+        <button type="button" data-value="3-3" aria-pressed="false">3-3</button>
+        <button type="button" data-value="5-1" aria-pressed="false">5-1</button>
+        <button type="button" data-value="6" aria-pressed="false">Monotone</button>
+      </div>
+    </fieldset>
+
+    <h2 class="filter-head">Highest-EV split</h2>
+    <fieldset id="f-he" class="filter-group">
+      <legend>Hold’em</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="pocket pair" aria-pressed="false">Pocket pair</button>
+        <button type="button" data-value="suited" aria-pressed="false">Suited</button>
+        <button type="button" data-value="offsuit" aria-pressed="false">Offsuit</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-plo" class="filter-group">
+      <legend>PLO</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="double-suited" aria-pressed="false">Double-suited</button>
+        <button type="button" data-value="single-suited" aria-pressed="false">Single-suited</button>
+        <button type="button" data-value="rainbow" aria-pressed="false">Rainbow</button>
+        <button type="button" data-value="three-flush" aria-pressed="false">Three-flush</button>
+        <button type="button" data-value="monotone" aria-pressed="false">Monotone</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-tophe" class="filter-group">
+      <legend>Highest rank in Hold’em</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="yes" aria-pressed="false">Yes</button>
+        <button type="button" data-value="no" aria-pressed="false">No</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-place" class="filter-group">
+      <legend>Highest repeated rank</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="hold'em" aria-pressed="false">Pocket pair in Hold’em</button>
+        <button type="button" data-value="omaha" aria-pressed="false">All in PLO</button>
+        <button type="button" data-value="split" aria-pressed="false">Across both</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-call" class="filter-group">
+      <legend>EV lead</legend>
+      <div class="choices">
+        <button type="button" data-value="" aria-pressed="true">Any</button>
+        <button type="button" data-value="clear" aria-pressed="false">Larger lead</button>
+        <button type="button" data-value="tie" aria-pressed="false">Small lead</button>
+      </div>
+    </fieldset>
+    <fieldset id="f-sort" class="filter-group">
+      <legend>Sort</legend>
+      <div class="choices">
+        <button type="button" data-value="strong" aria-pressed="true">Strongest first</button>
+        <button type="button" data-value="weak" aria-pressed="false">Weakest first</button>
+        <button type="button" data-value="clear" aria-pressed="false">Largest EV gap</button>
+        <button type="button" data-value="close" aria-pressed="false">Smallest EV gap</button>
+      </div>
+    </fieldset>
+    <div class="filter-actions">
+      <button type="button" id="f-reset" class="ghost">Reset filters</button>
+      <p id="f-count" class="note" role="status"></p>
+    </div>
+    <p class="fine filter-note">A small lead is below the larger of 0.02 BB and twice the top split’s standard error. This is a guide, since the uncertainty of the gap itself is unknown.</p>
+  </div>
+  <div id="browse-list" class="panel"></div>
+</section>
+
+<section id="tend" hidden>
+  <div id="tend-body" class="stack"></div>
+</section>
+
+<footer>
+  <p>Hold’em uses the best five of seven. Omaha uses exactly two hole cards and three board cards. A scoop must win both outright. Otherwise, every ante is returned.</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

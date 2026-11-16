@@ -1,0 +1,62 @@
+Scoop solver - aggregate split preferences
+4 players, 2000 random deals x 1500 boards, 8000 equilibrium hand decisions   [2.36s, 16 threads]
+Antes returned (no scoop) 76.2% of boards | pure equilibrium splits 48.2% | mean NashConv 0.00093 BB
+EV given up vs. the best split: 'best Hold'em hand' heuristic 0.0366 BB/hand, random split 0.0961 BB/hand
+
+[1] Hold'em hand shape chosen
+  shape             chosen   available*    mean EV
+  pocket pair        29.7%         5.8%    +0.0631
+  suited             34.2%        23.6%    -0.0219
+  offsuit            36.1%        70.5%    -0.0312
+  * share of all 15 splits per hand with that shape (what a random split would give)
+
+[2] By pairing of the 6 cards (where the highest pair goes)
+  hand            share   mean EV  pair->HE  pair->PLO pair split  HE suited     PLO ds
+  no pair         35.1%   -0.0338         -          -         -      48.1%      25.8%
+  one pair        48.0%   +0.0113     39.8%      46.0%     14.2%      28.3%      21.6%
+  two pair        12.3%   +0.0609     44.6%      43.9%     11.6%      20.0%      18.9%
+  three pair       0.3%   +0.1147     64.0%      32.0%      4.0%      16.0%      20.0%
+  trips            3.4%   -0.0362     55.0%      13.8%     31.2%      27.1%      23.4%
+  trips + pair     0.8%   -0.0177     33.3%      33.3%     33.3%      33.3%      33.3%
+  quads            0.1%   -0.0537     37.5%      12.5%     50.0%      37.5%      25.0%
+
+[3] By suit distribution of the 6 cards (PLO suit structure chosen)
+  suits       share   mean EV  HE suited    PLO ds    PLO ss   rainbow   3-flush      mono
+  3-2-1       34.9%   +0.0007      31.9%     30.9%     49.3%      0.0%     19.8%      0.0%
+  2-2-1-1     29.9%   +0.0009      27.3%     13.1%     78.0%      8.9%      0.0%      0.0%
+  3-1-1-1     12.1%   -0.0180      13.8%      0.0%     63.0%     13.8%     23.2%      0.0%
+  2-2-2        9.3%   +0.0212      47.6%     47.6%     52.4%      0.0%      0.0%      0.0%
+  4-1-1        6.9%   +0.0021      64.5%      0.0%     64.5%      0.0%     32.5%      2.9%
+  4-2          3.2%   +0.0098      76.7%     69.6%      0.0%      0.0%     23.3%      7.1%
+  3-3          2.4%   -0.0052      33.5%     66.5%      0.0%      0.0%     33.5%      0.0%
+  5-1          1.2%   -0.0488      84.5%      0.0%      0.0%      0.0%     84.5%     15.5%
+  6            0.1%   -0.0329     100.0%      0.0%      0.0%      0.0%      0.0%    100.0%
+
+[4] Hold'em hand class chosen
+  class                         share    mean EV
+  other suited                  12.8%    -0.0338
+  other offsuit                 11.4%    -0.0444
+  two broadway offsuit          11.0%    +0.0162
+  connector/gapper suited       10.6%    -0.0574
+  connector/gapper offsuit      10.0%    -0.0841
+  77-22                          9.7%    -0.0394
+  two broadway suited            7.3%    +0.0300
+  TT-88                          5.8%    +0.0187
+  AA                             4.9%    +0.2132
+  KK                             4.0%    +0.1538
+  Ax offsuit                     3.7%    +0.0108
+  Ax suited                      3.5%    +0.0206
+  QQ                             3.1%    +0.1151
+  JJ                             2.3%    +0.0621
+
+[5] PLO hand shape chosen (share of all decisions)
+  suits \ ranks     unpaired   one pair   two pair     trips+      total
+  double-suited        15.2%       7.1%       0.6%       0.0%      22.9%
+  single-suited        35.1%      20.2%       1.6%       0.6%      57.5%
+  rainbow               2.4%       1.7%       0.2%       0.1%       4.3%
+  three-flush          10.5%       4.0%       0.0%       0.0%      14.5%
+  monotone              0.7%       0.0%       0.0%       0.0%       0.7%
+
+[6] High-card allocation
+  Hold'em hand contains the hand's top-ranked card:  42.7%
+  Hold'em hand is exactly the two highest cards:     24.1%
