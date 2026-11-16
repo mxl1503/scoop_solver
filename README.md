@@ -62,9 +62,9 @@ python -m http.server 8765
 
 Open `http://localhost:8765/web/`. Type any six cards. The page maps them onto the stored suit pattern and ranks the 15 splits. A link such as `http://localhost:8765/web/?hand=AsAhKdKc7d3c` opens that hand. `web/` reads `data/sixmax/hands.bin` and `summary.json`.
 
-For a source commit, Git ignores the build directory, the local catalogue and the generated Pages bundle. Once the solve finishes, run `python tools/pack_pages.py` to create a publication snapshot under `data/pages/`. The packer compresses each 16 MiB slice of `hands.bin` separately and copies `summary.json`. Commit the bundle explicitly with `git add -f data/pages/` and enable GitHub Pages for the branch root. The published site reads the compressed pieces. On `localhost`, the page reads the live catalogue from `data/sixmax/`.
+Git ignores the local catalogue and generated Pages bundle. With Node.js installed, run `node tools/pack_pages.mjs` after the solve finishes. It creates a small manifest, compressed hand chunks, a Browse index, and precomputed Insights under `data/pages/`. The published app loads the manifest on startup, one chunk per lookup, and the Browse index or Insights only when opened. It caches data by content hash, so a new solve updates only assets whose contents changed.
 
-**After the current solve:** rebuild the website’s data bundle once `data/sixmax/summary.json` reports `finished: true` and all 962,988 suit patterns are complete. Run `python tools/pack_pages.py`, then check that the packed summary also reports completion before publishing.
+To publish, stage the generated bundle with `git add -f -A -- data/pages/` and use the branch root as the GitHub Pages source. On localhost, the default still reads the live catalogue in `data/sixmax/`. To test the generated bundle locally, open `http://localhost:8765/web/?pack=1`.
 
 A row's EV is what you get by **committing** to that split while the opponents play the equilibrium for the deal. The separate equilibrium value is higher, because a player who can see every hand adapts the split to that deal. The book is zero-sum, so that adaptive value averages to 0 across all hands.
 

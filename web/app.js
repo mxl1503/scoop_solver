@@ -7,6 +7,7 @@ const PAIR_A = [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4];
 const PAIR_B = [1, 2, 3, 4, 5, 2, 3, 4, 5, 3, 4, 5, 4, 5, 5];
 const HDR = 64;
 const REC = 119;
+const BROWSE_REC = 14;
 
 const PERMS = [];
 (function gen(p, used) {
@@ -26,7 +27,7 @@ const PERMS = [];
 
 const params = new URLSearchParams(location.search);
 const live = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-const dataRoot = params.get("data") || (live ? "../data/sixmax" : "../data/pages");
+const dataRoot = params.get("data") || (live && params.get("pack") !== "1" ? "../data/sixmax" : "../data/pages");
 const FILTER_KEYS = {
   "f-pair": "pair",
   "f-high": "high",
@@ -43,7 +44,9 @@ const FILTER_KEYS = {
 
 let buf, u8, dv, ncanon = 0, completed = 0, deals = 0, boards = 0;
 let summary = null;
-let bookLoading = true;
+let indexedBook = null;
+let bookReady;
+let lookupRevision = 0;
 let bookWeight = 0;
 const LOOKUP_PROMPT = "Choose or type six cards, then select Show splits.";
 
@@ -157,40 +160,38 @@ function splitOf(hand, q) {
   return { he, plo };
 }
 
-function readKey(i) {
-  const o = HDR + i * REC;
-  return [0, 1, 2, 3, 4, 5].map((b) => u8[o + b]);
+function readKey(i, bytes = u8, start = HDR, stride = REC) {
+  const o = start + i * stride;
+  return Array.from(bytes.subarray(o, o + 6));
 }
-function findKey(key) {
-  let lo = 0, hi = ncanon;
+function findKey(key, bytes = u8, start = HDR, size = ncanon) {
+  let lo = 0, hi = size;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    const c = cmpArr(readKey(mid), key);
+    const c = cmpArr(readKey(mid, bytes, start), key);
     if (c < 0) lo = mid + 1;
     else hi = mid;
   }
-  if (lo < ncanon && cmpArr(readKey(lo), key) === 0) return lo;
+  if (lo < size && cmpArr(readKey(lo, bytes, start), key) === 0) return lo;
   return -1;
 }
-function readRec(i) {
-  const o = HDR + i * REC;
-  const cards = readKey(i);
-  const orbit = u8[o + 6];
-  const dcount = u8[o + 7];
+function readRec(bytes, view, o) {
+  const orbit = bytes[o + 6];
+  const dcount = bytes[o + 7];
   const ev = [], scoop = [], lose = [], eq = [];
   for (let s = 0; s < 15; s++) {
-    ev.push(dv.getInt16(o + 8 + 2 * s, true) / 1000);
-    scoop.push(dv.getUint16(o + 38 + 2 * s, true) / 10000);
-    lose.push(dv.getUint16(o + 68 + 2 * s, true) / 10000);
-    eq.push(u8[o + 98 + s] / 255);
+    ev.push(view.getInt16(o + 8 + 2 * s, true) / 1000);
+    scoop.push(view.getUint16(o + 38 + 2 * s, true) / 10000);
+    lose.push(view.getUint16(o + 68 + 2 * s, true) / 10000);
+    eq.push(bytes[o + 98 + s] / 255);
   }
   const es = eq.reduce((a, b) => a + b, 0) || 1;
   for (let s = 0; s < 15; s++) eq[s] /= es;
   return {
-    cards, orbit, deals: dcount, ev, scoop, lose, eq,
-    nash: dv.getInt16(o + 113, true) / 1000,
-    se: dv.getInt16(o + 115, true) / 1000,
-    value: dv.getInt16(o + 117, true) / 1000,
+    orbit, deals: dcount, ev, scoop, lose, eq,
+    nash: view.getInt16(o + 113, true) / 1000,
+    se: view.getInt16(o + 115, true) / 1000,
+    value: view.getInt16(o + 117, true) / 1000,
   };
 }
 
@@ -198,7 +199,7 @@ function setStatus(text) {
   $("status").textContent = text;
 }
 function statusLine() {
-  if (!buf) return "Dataset not loaded.";
+  if (!buf && !indexedBook) return "Dataset not loaded.";
   const pctDone = ncanon ? (100 * completed) / ncanon : 0;
   const tail = completed >= ncanon ? "complete" : pctDone.toFixed(1) + "% solved";
   return `${completed.toLocaleString()} / ${ncanon.toLocaleString()} hands · ${deals} deals × ${boards} boards · ${tail}`;
@@ -319,45 +320,105 @@ function installBytes(bytes) {
   setStatus(statusLine());
 }
 
-async function loadSummary() {
-  try {
-    const res = await fetch(dataRoot + "/summary.json" + (live ? "?t=" + Date.now() : ""));
-    if (!res.ok) return;
-    summary = JSON.parse(await res.text());
-    if ($("tend").hidden === false) renderTend();
-  } catch {
-    /* The split table can still load without the summary. */
+const packedCacheName = "scoop-catalogue-assets-v1";
+const shardCache = new Map();
+const shardCacheLimit = 16;
+
+async function fetchAsset(file) {
+  const url = new URL(dataRoot + "/" + file, location.href).href;
+  const cache = await globalThis.caches?.open(packedCacheName).catch(() => null);
+  if (cache) {
+    const hit = await cache.match(url).catch(() => null);
+    if (hit) return hit;
   }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Could not download " + file + " (" + response.status + ").");
+  if (cache) cache.put(url, response.clone()).catch(() => {});
+  return response;
+}
+
+async function packedBytes(file) {
+  return maybeGunzip(new Uint8Array(await (await fetchAsset(file)).arrayBuffer()));
+}
+
+function readShard(shard) {
+  let request = shardCache.get(shard.file);
+  shardCache.delete(shard.file);
+  if (!request) {
+    request = packedBytes(shard.file).then(bytes => {
+      if (bytes.length !== shard.count * REC) throw new Error("The hand chunk has an unexpected size.");
+      return bytes;
+    }).catch(error => {
+      if (shardCache.get(shard.file) === request) shardCache.delete(shard.file);
+      throw error;
+    });
+  }
+  shardCache.set(shard.file, request);
+  if (shardCache.size > shardCacheLimit) shardCache.delete(shardCache.keys().next().value);
+  return request;
+}
+
+function shardFor(key) {
+  const target = key.reduce((value, card) => value * 64 + card, 0);
+  const shards = indexedBook.shards;
+  let lo = 0, hi = shards.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (shards[mid].last < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return shards[lo];
+}
+
+async function lookupRecord(key) {
+  if (!indexedBook) {
+    const i = findKey(key);
+    return i >= 0 && u8[HDR + i * REC + 7] ? readRec(u8, dv, HDR + i * REC) : null;
+  }
+  const shard = shardFor(key);
+  if (!shard) return null;
+  const bytes = await readShard(shard);
+  const i = findKey(key, bytes, 0, shard.count);
+  return i >= 0 ? readRec(bytes, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), i * REC) : null;
 }
 
 async function loadManifest(q) {
-  const res = await fetch(dataRoot + "/manifest.json" + q);
-  if (!res.ok) return false;
+  const res = await fetch(dataRoot + "/manifest.json" + q, { cache: "no-cache" });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error("Could not read the split book index (" + res.status + ").");
   const spec = await res.json();
-  if (!spec.chunks || !spec.chunks.length) return false;
-  const raws = [];
-  for (let i = 0; i < spec.chunks.length; i++) {
-    const bytes = await fetchBytes(dataRoot + "/" + spec.chunks[i] + q, `Part ${i + 1} of ${spec.chunks.length}`);
-    if (!bytes) throw new Error("missing piece " + spec.chunks[i]);
-    raws.push(await maybeGunzip(bytes));
+  if (spec.format === "SCOOP-indexed-v1") {
+    indexedBook = spec;
+    ({ count: ncanon, completed, deals, boards, weight: bookWeight } = spec);
+    $("random-hand").disabled = bookWeight === 0;
+    setStatus(statusLine());
+    return true;
   }
+  if (spec.format !== "SCOOP6H1-gzip" || !spec.chunks?.length) {
+    throw new Error("Unrecognised split book index.");
+  }
+  const raws = await Promise.all(spec.chunks.map(async file => {
+    const response = await fetch(dataRoot + "/" + file + q);
+    if (!response.ok) throw new Error("Could not download " + file + ".");
+    return maybeGunzip(new Uint8Array(await response.arrayBuffer()));
+  }));
   installBytes(concatBytes(raws));
   return true;
 }
 
 async function loadBook() {
-  const q = live && params.get("pack") !== "1" ? "?t=" + Date.now() : "";
-  const packed = params.get("pack") === "1" || !live;
-  if (packed && params.get("pack") !== "0") {
-    if (await loadManifest(q)) return;
-    const gz = await fetchBytes(dataRoot + "/hands.bin.gz" + q, "Loading the split book…");
+  const packed = params.get("pack") === "1" || (!live && params.get("pack") !== "0");
+  if (packed && await loadManifest("")) return;
+  const q = live && !packed ? "?t=" + Date.now() : "";
+  if (packed) {
+    const gz = await fetchBytes(dataRoot + "/hands.bin.gz", "Loading the split book…");
     if (gz) {
       installBytes(await maybeGunzip(gz));
       return;
     }
   }
   const bin = await fetchBytes(dataRoot + "/hands.bin" + q, "Loading the split book…");
-  if (!bin) throw new Error("missing");
+  if (!bin) throw new Error("The split book has not been published here yet.");
   installBytes(bin);
 }
 
@@ -458,6 +519,7 @@ function updateEntry() {
 }
 
 function editHand(text) {
+  lookupRevision++;
   $("text").value = text;
   updateEntry();
   showLookupMessage(LOOKUP_PROMPT);
@@ -479,22 +541,44 @@ function showHand(text) {
   $("entry").requestSubmit();
 }
 
-function showRandomHand(weight, size, indices) {
-  let ticket = Math.floor(Math.random() * weight);
-  for (let k = 0; k < size; k++) {
+function weightedKey(ticket, count, bytes, start, stride, indices) {
+  for (let k = 0; k < count; k++) {
     const i = indices ? indices[k] : k;
-    const offset = HDR + i * REC;
-    if (!u8[offset + 7]) continue;
+    const offset = start + i * stride;
+    if (stride === REC && !bytes[offset + 7]) continue;
+    ticket -= bytes[offset + 6];
+    if (ticket < 0) return readKey(i, bytes, start, stride);
+  }
+  throw new Error("Could not find a solved hand for this selection.");
+}
 
-    // Each suit pattern represents a different number of actual six-card hands.
-    ticket -= u8[offset + 6];
-    if (ticket < 0) {
-      const suits = PERMS[Math.floor(Math.random() * PERMS.length)];
-      const cards = readKey(i).map((card) => (card & ~3) | suits[card & 3]);
-      cards.sort((a, b) => b - a);
-      showHand(fmtCards(cards));
-      return;
+async function showRandomHand(matches = false) {
+  const revision = ++lookupRevision;
+  let ticket = Math.floor(Math.random() * (matches ? browseWeight : bookWeight));
+  try {
+    let key;
+    if (matches) {
+      key = weightedKey(ticket, browseN, browseData?.bytes ?? u8, browseData ? 0 : HDR,
+        browseData ? BROWSE_REC : REC, browseIdx);
+    } else if (indexedBook) {
+      showLookupMessage("Loading a random hand…");
+      for (const shard of indexedBook.shards) {
+        if (ticket < shard.weight) {
+          key = weightedKey(ticket, shard.count, await readShard(shard), 0, REC);
+          break;
+        }
+        ticket -= shard.weight;
+      }
+    } else {
+      key = weightedKey(ticket, ncanon, u8, HDR, REC);
     }
+    if (revision !== lookupRevision) return;
+    const suits = PERMS[Math.floor(Math.random() * PERMS.length)];
+    const cards = key.map(card => (card & ~3) | suits[card & 3]);
+    cards.sort((a, b) => b - a);
+    showHand(fmtCards(cards));
+  } catch (error) {
+    if (revision === lookupRevision) showLookupMessage(error.message);
   }
 }
 
@@ -525,23 +609,33 @@ function scheduleFitSplitTable() {
 function isSmallLead(gap, se) {
   return gap < Math.max(20, 2 * se);
 }
-function renderResult(input) {
+async function renderResult(input) {
+  const revision = ++lookupRevision;
   rememberHand(fmtCards(input));
-  if (!buf) {
-    showLookupMessage("The split book is unavailable right now.");
+  showLookupMessage("Loading splits…");
+  if (!await bookReady) {
+    if (revision === lookupRevision) showLookupMessage("The split book is unavailable right now.");
     return;
   }
+  if (revision !== lookupRevision) return;
   const { asc, perm } = lexMin(input);
-  const desc = asc.slice().reverse();
+  const desc = asc.reverse();
   const inv = [0, 0, 0, 0];
-  for (let s = 0; s < 4; s++) inv[perm[s]] = s;
-  const shown = desc.map((c) => (c & ~3) | inv[c & 3]);
-  const idx = findKey(desc);
-  if (idx < 0 || !u8[HDR + idx * REC + 7]) {
+  for (let suit = 0; suit < 4; suit++) inv[perm[suit]] = suit;
+  const shown = desc.map(c => (c & ~3) | inv[c & 3]);
+  let rec;
+  try {
+    rec = await lookupRecord(desc);
+  } catch (error) {
+    if (revision === lookupRevision) showLookupMessage(error.message);
+    return;
+  }
+  if (revision !== lookupRevision) return;
+  if (!rec) {
     showLookupMessage("Splits for " + fmtCards(input) + " are not available yet.");
     return;
   }
-  const rec = readRec(idx);
+
   const order = [...Array(15).keys()].sort((a, b) => rec.ev[b] - rec.ev[a]);
   const best = order[0];
   const second = order[1];
@@ -595,85 +689,7 @@ function bestSplitLabel(hand, s) {
   return sp.he.map(cardStr).join("");
 }
 
-function collectSplitInsights() {
-  const pairRanks = Array.from({ length: 13 }, () => ({ weight: 0, holdemBest: 0, loss: [0, 0, 0] }));
-  const suitGroups = new Map();
-  const rankCounts = new Uint8Array(13);
-  const suitCounts = new Uint8Array(4);
-  // Pack suit counts in three bits each so removing the two Hold’em cards is a subtraction.
-  const suitUnit = [1, 8, 64, 512];
-  const doubleSuited = new Set(suitUnit.flatMap((first, i) => suitUnit.slice(i + 1).map(second => 2 * (first + second))));
-  let totalWeight = 0;
 
-  for (let i = 0; i < ncanon; i++) {
-    const o = HDR + i * REC;
-    if (!u8[o + 7]) continue;
-    const weight = u8[o + 6];
-    totalWeight += weight;
-    rankCounts.fill(0);
-    suitCounts.fill(0);
-    let suitKey = 0;
-    let pairRank = -1;
-    let repeatedRanks = 0;
-    for (let k = 0; k < 6; k++) {
-      const card = u8[o + k];
-      const rank = card >> 2;
-      const suit = card & 3;
-      if (++rankCounts[rank] === 2) {
-        pairRank = rank;
-        repeatedRanks++;
-      }
-      suitCounts[suit]++;
-      suitKey += suitUnit[suit];
-    }
-    const onePair = repeatedRanks === 1 && rankCounts[pairRank] === 2;
-    let pairedSuits = 0;
-    for (const count of suitCounts) if (count >= 2) pairedSuits++;
-    const canDoubleSuit = pairedSuits >= 2;
-    if (!onePair && !canDoubleSuit) continue;
-
-    const pairBest = [-Infinity, -Infinity, -Infinity]; // PLO, split, Hold’em
-    let bestDouble = -Infinity;
-    let bestOther = -Infinity;
-    for (let q = 0; q < 15; q++) {
-      const a = u8[o + PAIR_A[q]];
-      const b = u8[o + PAIR_B[q]];
-      const ev = dv.getInt16(o + 8 + 2 * q, true);
-      if (onePair) {
-        const placement = Number((a >> 2) === pairRank) + Number((b >> 2) === pairRank);
-        pairBest[placement] = Math.max(pairBest[placement], ev);
-      }
-      if (canDoubleSuit) {
-        const ploKey = suitKey - suitUnit[a & 3] - suitUnit[b & 3];
-        if (doubleSuited.has(ploKey)) bestDouble = Math.max(bestDouble, ev);
-        else bestOther = Math.max(bestOther, ev);
-      }
-    }
-
-    if (onePair) {
-      const group = pairRanks[pairRank];
-      const best = Math.max(...pairBest);
-      group.weight += weight;
-      if (pairBest[2] === best) group.holdemBest += weight;
-      for (let placement = 0; placement < 3; placement++) {
-        group.loss[placement] += (best - pairBest[placement]) * weight;
-      }
-    }
-    if (canDoubleSuit) {
-      const pattern = sig4(suitCounts);
-      let group = suitGroups.get(pattern);
-      if (!group) {
-        group = { weight: 0, doubleAhead: 0, doubleLoss: 0, otherLoss: 0 };
-        suitGroups.set(pattern, group);
-      }
-      group.weight += weight;
-      if (bestDouble > bestOther) group.doubleAhead += weight;
-      group.doubleLoss += Math.max(0, bestOther - bestDouble) * weight;
-      group.otherLoss += Math.max(0, bestDouble - bestOther) * weight;
-    }
-  }
-  return { pairRanks, suitGroups, totalWeight };
-}
 
 function insightTable(heading, columns, rows) {
   return `<div class="table-wrap"><table>
@@ -689,14 +705,48 @@ function tendencyTable(title, heading, columns, rows) {
 
 let splitInsights = null;
 
-function renderTend() {
+let insightsRequest = null;
+
+async function openInsights() {
   const host = $("tend-body");
-  if (!buf || !completed) {
-    host.innerHTML = `<p class="panel empty">${bookLoading ? "Loading the split book…" : "The split book is unavailable."}</p>`;
+  if (splitInsights) {
+    renderTend();
     return;
   }
-  splitInsights ??= collectSplitInsights();
-  const { pairRanks, suitGroups, totalWeight } = splitInsights;
+  host.innerHTML = '<p class="panel empty">Loading Insights…</p>';
+  if (!await bookReady || !completed) {
+    host.textContent = "Insights are unavailable.";
+    return;
+  }
+  insightsRequest ??= (async () => {
+    if (indexedBook) {
+      summary = await (await fetchAsset(indexedBook.insights)).json();
+      splitInsights = summary.splitInsights;
+      return;
+    }
+    const [core, metadata] = await Promise.all([
+      import("./catalogue.mjs"),
+      fetch(dataRoot + "/summary.json", { cache: "no-cache" })
+        .then(res => res.ok ? res.json() : null).catch(() => null),
+    ]);
+    summary = metadata;
+    splitInsights = core.summarizeSplits(u8, dv, ncanon);
+  })().catch(error => {
+    insightsRequest = null;
+    throw error;
+  });
+  try {
+    await insightsRequest;
+    if (!$("tend").hidden) renderTend();
+  } catch (error) {
+    host.textContent = error.message;
+  }
+}
+
+function renderTend() {
+  const host = $("tend-body");
+  const { pairRanks, suitGroups: groups, totalWeight } = splitInsights;
+  const suitGroups = new Map(groups);
   const s = summary?.completed === completed ? summary : null;
   const cost = (loss, weight) => (loss / weight / 1000).toFixed(3);
   const roundedPct = (part, whole) => Math.round(100 * part / whole) + "%";
@@ -717,7 +767,7 @@ function renderTend() {
     { hand: "AcJd6d6c5c4c", note: "4-2 · Keep 66 in double-suited PLO", holdem: "5c4c", plo: "AcJd6d6c" },
     { hand: "AcJd6d6h5c4c", note: "3-2-1 · Move 66 to Hold’em", holdem: "6h6d", plo: "AcJd5c4c" },
   ];
-  const showExamples = examples.every(({ hand }) => {
+  const showExamples = Boolean(indexedBook) || examples.every(({ hand }) => {
     const key = lexMin(parseText(hand)).asc.reverse();
     const i = findKey(key);
     return i >= 0 && u8[HDR + i * REC + 7] > 0;
@@ -830,7 +880,7 @@ function bestOf(o) {
 }
 
 let browseIdx = new Uint32Array(0);
-let browseGap = new Int16Array(0);
+let browseGap = new Uint16Array(0);
 let browseOrder = new Uint32Array(0);
 let browseN = 0;
 let browseWeight = 0;
@@ -838,16 +888,60 @@ let browseShown = 40;
 let browseDirty = true;
 let browseTimer = 0;
 
+let browseData = null;
+let browseRequest = null;
+
+async function openBrowse() {
+  if (!browseDirty) return;
+  const count = $("f-count");
+  if (!await bookReady) {
+    count.textContent = "The split book is unavailable.";
+    return;
+  }
+  if (indexedBook && !browseData) {
+    count.textContent = "Loading Browse index…";
+    browseRequest ??= packedBytes(indexedBook.browse).then(bytes => {
+      if (bytes.length !== completed * BROWSE_REC) throw new Error("The Browse index has an unexpected size.");
+      browseData = { bytes, view: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) };
+    }).catch(error => {
+      browseRequest = null;
+      throw error;
+    });
+    try {
+      await browseRequest;
+    } catch (error) {
+      count.textContent = error.message;
+      return;
+    }
+  }
+  if (!$("browse").hidden && browseDirty) runBrowse();
+}
+
+function browseKey(i) {
+  return browseData ? readKey(i, browseData.bytes, 0, BROWSE_REC) : readKey(i);
+}
+
+function browseRow(o) {
+  if (browseData) {
+    const { bytes, view } = browseData;
+    return {
+      best: bytes[o + 7], bestEv: view.getInt16(o + 8, true),
+      gap: view.getUint16(o + 10, true), se: view.getInt16(o + 12, true),
+    };
+  }
+  const { best, bestEv, second } = bestOf(o);
+  return { best, bestEv, gap: bestEv - second, se: dv.getInt16(o + 115, true) };
+}
+
 function runBrowse() {
   browseDirty = false;
   const host = $("browse-list");
   const count = $("f-count");
   $("random-match").disabled = true;
-  if (!buf) {
-    count.textContent = "";
-    host.innerHTML = `<p class="empty">The dataset is not loaded yet.</p>`;
-    return;
-  }
+  const bytes = browseData?.bytes ?? u8;
+  const start = browseData ? 0 : HDR;
+  const stride = browseData ? BROWSE_REC : REC;
+  const size = browseData ? completed : ncanon;
   const wantPair = filterValue("f-pair");
   const wantHigh = filterValue("f-high");
   const wantPairRank = filterValue("f-pairrank");
@@ -867,18 +961,18 @@ function runBrowse() {
   let cap = 8192;
   let idx = new Uint32Array(cap);
   let evA = new Int16Array(cap);
-  let gapA = new Int16Array(cap);
+  let gapA = new Uint16Array(cap);
   let n = 0;
   let weight = 0;
-  for (let i = 0; i < ncanon; i++) {
-    const o = HDR + i * REC;
-    if (u8[o + 7] === 0) continue;
+  for (let i = 0; i < size; i++) {
+    const o = start + i * stride;
+    if (!browseData && !bytes[o + 7]) continue;
     cnt.fill(0);
     sc.fill(0);
     let hi = 0;
     let topPair = -1;
     for (let k = 0; k < 6; k++) {
-      const c = u8[o + k];
+      const c = bytes[o + k];
       hand6[k] = c;
       const r = c >> 2;
       cnt[r]++;
@@ -892,9 +986,8 @@ function runBrowse() {
     if (wantPair && pairName() !== wantPair) continue;
     if (wantSuits && sig4(sc) !== wantSuits) continue;
 
-    const pick = bestOf(o);
-    const gap = pick.bestEv - pick.second;
-    const se = dv.getInt16(o + 115, true);
+    const pick = browseRow(o);
+    const { gap, se } = pick;
     const close = isSmallLead(gap, se);
     if (wantCall === "clear" && close) continue;
     if (wantCall === "tie" && !close) continue;
@@ -923,12 +1016,12 @@ function runBrowse() {
       cap *= 2;
       const ni = new Uint32Array(cap); ni.set(idx); idx = ni;
       const ne = new Int16Array(cap); ne.set(evA); evA = ne;
-      const ng = new Int16Array(cap); ng.set(gapA); gapA = ng;
+      const ng = new Uint16Array(cap); ng.set(gapA); gapA = ng;
     }
     idx[n] = i;
     evA[n] = pick.bestEv;
     gapA[n] = gap;
-    weight += u8[o + 6];
+    weight += bytes[o + 6];
     n++;
   }
   const order = new Uint32Array(n);
@@ -964,17 +1057,19 @@ function renderBrowseList() {
   let html = "";
   for (let row = 0; row < end; row++) {
     const k = browseOrder[row];
-    const rec = readRec(browseIdx[k]);
-    let best = 0;
-    for (let s = 1; s < 15; s++) if (rec.ev[s] > rec.ev[best]) best = s;
-    const sp = splitOf(rec.cards, best);
+    const i = browseIdx[k];
+    const cards = browseKey(i);
+    const o = browseData ? i * BROWSE_REC : HDR + i * REC;
+    const { best, bestEv, se } = browseRow(o);
+    const sp = splitOf(cards, best);
+    const ev = bestEv / 1000;
     const gap = browseGap[k] / 1000;
-    const close = isSmallLead(browseGap[k], Math.round(rec.se * 1000));
+    const close = isSmallLead(browseGap[k], se);
     const lead = (close ? "Small lead " : "Lead ") + bb(gap) + " BB";
     html += `<button type="button" class="brow" data-i="${browseIdx[k]}">
-      <span class="cards">${rec.cards.map(cardHtml).join("")}</span>
+      <span class="cards">${cards.map(cardHtml).join("")}</span>
       <span class="play">${sp.he.map(cardHtml).join("")} in hold’em · ${sp.plo.map(cardHtml).join("")}<br>${heShape(sp.he[0], sp.he[1])} / ${ploSuit(sp.plo)} · ${lead}</span>
-      <span class="ev"><b class="${cls(rec.ev[best])}">${bb(rec.ev[best])}</b><span class="fine">± ${rec.se.toFixed(3)}</span></span>
+      <span class="ev"><b class="${cls(ev)}">${bb(ev)}</b><span class="fine">± ${(se / 1000).toFixed(3)}</span></span>
     </button>`;
   }
   if (end < browseN) {
@@ -989,7 +1084,7 @@ function scheduleBrowse() {
   clearTimeout(browseTimer);
   if ($("browse").hidden) return;
   $("f-count").textContent = "Filtering…";
-  browseTimer = setTimeout(runBrowse, 60);
+  browseTimer = setTimeout(openBrowse, 60);
 }
 
 function showTab(which) {
@@ -999,8 +1094,8 @@ function showTab(which) {
   $("tab-lookup").classList.toggle("on", which === "lookup");
   $("tab-browse").classList.toggle("on", which === "browse");
   $("tab-tend").classList.toggle("on", which === "tend");
-  if (which === "tend") renderTend();
-  if (which === "browse" && browseDirty) runBrowse();
+  if (which === "tend") openInsights();
+  if (which === "browse") openBrowse();
   if (which === "lookup") scheduleFitSplitTable();
 }
 
@@ -1026,8 +1121,8 @@ $("filters").addEventListener("click", (event) => {
   writeFilters();
   scheduleBrowse();
 });
-$("random-hand").addEventListener("click", () => showRandomHand(bookWeight, ncanon));
-$("random-match").addEventListener("click", () => showRandomHand(browseWeight, browseN, browseIdx));
+$("random-hand").addEventListener("click", () => showRandomHand());
+$("random-match").addEventListener("click", () => showRandomHand(true));
 $("f-reset").addEventListener("click", () => {
   for (const id of Object.keys(FILTER_KEYS)) selectFilters($(id), []);
   writeFilters();
@@ -1040,9 +1135,10 @@ $("browse-list").addEventListener("click", (e) => {
     return;
   }
   const row = e.target.closest("[data-i]");
-  if (row) showHand(fmtCards(readKey(Number(row.dataset.i))));
+  if (row) showHand(fmtCards(browseKey(Number(row.dataset.i))));
 });
 $("text").addEventListener("input", () => {
+  lookupRevision++;
   updateEntry();
   showLookupMessage(LOOKUP_PROMPT);
 });
@@ -1067,27 +1163,23 @@ $("result").addEventListener("click", async (e) => {
     btn.textContent = "Copy the address bar";
   }
 });
-async function boot() {
+function boot() {
   readFilters();
+  bookReady = loadBook().then(() => true, err => {
+    hideProgress();
+    setStatus("Split book unavailable");
+    showLookupMessage(err.message);
+    return false;
+  });
+
   const hand = params.get("hand");
   if (hand) {
     $("text").value = hand;
     updateEntry();
+    $("entry").requestSubmit();
   } else if (hasFilterQuery()) {
     showTab("browse");
   }
-  try {
-    await loadBook();
-    browseDirty = true;
-    if (!$("browse").hidden) runBrowse();
-    if ($("text").value.trim()) $("entry").requestSubmit();
-  } catch (err) {
-    hideProgress();
-    setStatus("Split book unavailable");
-    showLookupMessage(err.message === "missing" ? "The split book has not been published here yet." : err.message);
-  }
-  bookLoading = false;
-  if (!$("tend").hidden) renderTend();
-  await loadSummary();
+  return bookReady;
 }
 boot();
